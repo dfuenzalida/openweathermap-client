@@ -4,25 +4,35 @@
             [clojurewerkz.quartzite.jobs :as j]
             [clojurewerkz.quartzite.jobs :refer [defjob]]
             [clojurewerkz.quartzite.schedule.simple
-             :refer [schedule with-repeat-count with-interval-in-milliseconds]]))
+             :refer [schedule with-repeat-count
+                     repeat-forever
+                     with-interval-in-milliseconds
+                     with-interval-in-minutes]]
+            [openweatherdb.db :as db]
+            [openweatherdb.client :as client]))
 
-(defjob NoOpJob
+;; A sample job which collects the cities and saves current weather data for each one
+(defjob update-weather-data
   [ctx]
-  (do
-    (println ctx)
-    (println (java.util.Date.))))
+  (doall
+   (map
+    (fn [city]
+      (let [name (:name city) country (:country city)]
+        (db/save (client/weather name country))))
+    (db/cities))))
 
 (defn -main
   [& m]
+  (db/connect-mongo)
   (qs/initialize)
   (qs/start)
   (let [job (j/build
-             (j/of-type NoOpJob)
-             (j/with-identity (j/key "jobs.noop.1")))
+             (j/of-type update-weather-data)
+             (j/with-identity (j/key "jobs.weather.1")))
         trigger (t/build
                  (t/with-identity (t/key "triggers.1"))
                  (t/start-now)
                  (t/with-schedule (schedule
-                                   (with-repeat-count 10)
-                                   (with-interval-in-milliseconds 2000))))]
+                                   (repeat-forever)
+                                   (with-interval-in-minutes 5))))]
     (qs/schedule job trigger)))
